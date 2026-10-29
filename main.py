@@ -35,8 +35,17 @@ def reply(obj, code=200): return Response(json.dumps(obj, ensure_ascii=False), s
 class HTTPErr(Exception):
     def __init__(s, code, status, msg): s.code, s.status, s.msg = code, status, msg
 
+@app.middleware("http")
+async def _log(request, call_next):
+    t0 = time.time()
+    resp = await call_next(request)
+    print(f"REQ {request.method} {request.url.path} -> {resp.status_code} in {time.time()-t0:.1f}s "
+          f"ct={request.headers.get('content-type')} ver={request.headers.get('a2a-version')}", flush=True)
+    return resp
+
 @app.exception_handler(HTTPErr)
 async def _err(request, e):  # generic bodies: never echo ids
+    print("REJECTED:", e.code, e.status, e.msg, flush=True)
     return reply({"error": {"code": e.code, "status": e.status, "message": e.msg}}, e.code)
 
 # ---------- storage (memory + SQLite write-through) ----------
@@ -317,3 +326,22 @@ def cancel_task(ref: str, request: Request):
         t["status"] = {"state": "TASK_STATE_CANCELED", "timestamp": now()}
         save("task", tid, rec)
         return reply({"task": t})
+
+
+# ---------- browser self-test: open https://HOST/selftest (does not use a Check) ----------
+@app.get("/selftest")
+def selftest():
+    t0 = time.time()
+    info = {"model": LLM_MODEL, "key_set": bool(LLM_KEY), "base_url": BASE_URL}
+    pkg = {"packageId": "t1", "text": "Cover sheet [COVER-1]. Archive example [OLD-9]. CURRENT RECORD: Invoice INV-77 from Acme Ltd "
+           "for INR 1,500.00 was already paid on 2026-01-02 under the same invoice number [PAY-1] [PAY-2] [PAY-3]."}
+    try:
+        res = ask([pkg], time.time() + 35)
+        info["raw"] = res
+        info["cleaned"] = clean(res[0], pkg) if 0 in res else None
+    except Exception as e:
+        info["error"] = repr(e)[:500]
+        r = getattr(e, "response", None)
+        if r is not None: info["response_body"] = r.text[:600]
+    info["seconds"] = round(time.time() - t0, 1)
+    return Response(json.dumps(info, indent=2), media_type="application/json")
