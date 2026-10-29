@@ -298,7 +298,7 @@ def get_task(ref: str, request: Request):
     with LOCK:
         rec = TASKS.get(ref)
         if not rec or rec["owner"] != principal: raise HTTPErr(404, "NOT_FOUND", "Task not found")
-        return reply({"task": rec["task"]})
+        return reply(rec["task"])
 
 @app.get(PREFIX + "/tasks")
 def list_tasks(request: Request):
@@ -325,7 +325,7 @@ def cancel_task(ref: str, request: Request):
         if t["status"]["state"] in TERMINAL: raise HTTPErr(409, "TASK_NOT_CANCELABLE", "Task already finished")
         t["status"] = {"state": "TASK_STATE_CANCELED", "timestamp": now()}
         save("task", tid, rec)
-        return reply({"task": t})
+        return reply(t)
 
 
 # ---------- browser self-test: open https://HOST/selftest (does not use a Check) ----------
